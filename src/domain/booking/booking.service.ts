@@ -154,6 +154,11 @@ export class BookingService {
     if (!booking) throw new BookingError("booking_not_found", "Запись не найдена");
 
     const status = paid ? "paid" : "submitted";
+    if (booking.status === status) {
+      // Статус не изменился: уведомлять не о чем. Иначе повторное нажатие
+      // «Оплачено» слало бы второе уведомление о том же.
+      return { bookingId, status };
+    }
     await this.prisma.booking.update({ where: { id: bookingId }, data: { status } });
 
     if (paid) {

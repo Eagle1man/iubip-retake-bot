@@ -364,6 +364,21 @@ describe("оплата и явка (§10: только дирекция/преп
     expect(res.json()).toMatchObject({ status: "paid" });
   });
 
+  it("повторная отметка оплаты — уведомлений не добавляет", async () => {
+    const before = h.client.sent.filter((m) => m.text.includes("Оплата по записи подтверждена")).length;
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/internal/bookings/${bookingId}/payment`,
+      headers: { ...h.headers, "X-User-Id": "3001" },
+      payload: { paid: true },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = h.client.sent.filter((m) => m.text.includes("Оплата по записи подтверждена")).length;
+    expect(after).toBe(before);
+  });
+
   it("GET /internal/payments/:token видит подтверждённый платёж", async () => {
     const res = await h.app.inject({
       method: "GET",

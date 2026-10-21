@@ -72,6 +72,11 @@ export class SlotService {
   async updateRoom(slotId: string, room: string) {
     const slot = await this.prisma.examSlot.findUnique({ where: { id: slotId } });
     if (!slot) throw new BookingError("slot_not_found", "Сессия не найдена");
+    if (slot.room === room) {
+      // Аудитория не изменилась: уведомлять не о чем (иначе повторное
+      // нажатие «Сменить аудиторию» слало бы второе уведомление).
+      return { updated: false, notified: 0 };
+    }
 
     await this.prisma.examSlot.update({ where: { id: slotId }, data: { room } });
 

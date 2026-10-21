@@ -97,6 +97,21 @@ describe("POST /internal/slots/:id/room (§13.9 уведомление запи�
     expect(new Set(roomChanges.map((m) => m.userId))).toEqual(new Set(STUDENTS.map((s) => s.userId)));
   });
 
+  it("повторная смена на ту же аудиторию — уведомлений нет", async () => {
+    const before = h.client.sent.filter((m) => m.text.includes("Аудитория изменена")).length;
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/internal/slots/${base.slotId}/room`,
+      headers: h.headers,
+      payload: { room: "Ауд-777" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = h.client.sent.filter((m) => m.text.includes("Аудитория изменена")).length;
+    expect(after).toBe(before);
+  });
+
   it("неизвестная сессия → 404", async () => {
     const res = await h.app.inject({
       method: "POST",

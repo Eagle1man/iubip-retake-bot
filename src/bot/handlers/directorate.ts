@@ -1,4 +1,5 @@
 import type { BotContext } from "../dispatcher.js";
+import { BookingError } from "../../domain/booking/booking.rules.js";
 import { bookingNumber, findByNumber } from "../../domain/staff/role.service.js";
 import { btn, keyboard } from "../keyboards.js";
 import { texts } from "../texts.js";
@@ -134,8 +135,16 @@ export async function handleRoom(ctx: BotContext, room: string): Promise<void> {
 }
 
 export async function handleCancelSlot(ctx: BotContext, slotId: string): Promise<void> {
-  const result = await ctx.deps.slots.cancel(slotId);
-  await ctx.send(texts.directorate.slotCancelled(result.notified));
+  try {
+    const result = await ctx.deps.slots.cancel(slotId);
+    await ctx.send(texts.directorate.slotCancelled(result.notified));
+  } catch (error) {
+    if (error instanceof BookingError && error.code === "slot_cancelled") {
+      await ctx.send(texts.directorate.slotAlreadyCancelled);
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function handleExport(ctx: BotContext): Promise<void> {

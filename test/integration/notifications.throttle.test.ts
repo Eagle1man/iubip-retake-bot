@@ -42,7 +42,7 @@ beforeAll(async () => {
   });
   await worker.waitUntilReady();
 
-  sink = new QueueNotificationSink(queue);
+  sink = new QueueNotificationSink(queue, getRedis(REDIS_URL));
   close = async () => {
     await worker.close();
     // Добиваем очередь: иначе не отправленные за окно уведомления уедут

@@ -30,16 +30,26 @@ export function createNotifyQueue(redisUrl: string): Queue {
 
 /**
  * Синхронный интерфейс домена → очередь.
- * Идемпотентность: jobId по событию, поэтому повторная отмена не плодит уведомления.
+ *
+ * jobId уникален на КАЖДОЕ уведомление (счётчик в Redis). Раньше id был
+ * детерминированным (kind + scope + userId) — и это ломало доставку: BullMQ
+ * не добавляет дубль jobId, а завершённые джобы живут в наборе completed,
+ * поэтому повторное событие (вторая смена аудитории, повторная отметка оплаты
+ * после отмены/сброса) молча не отправлялось вовсе. Идемпотентность теперь
+ * обеспечивает домен: уведомление уходит только при фактическом изменении.
  */
 export class QueueNotificationSink {
-  constructor(private readonly queue: Queue) {}
+  constructor(
+    private readonly queue: Queue,
+    private readonly redis: Redis,
+  ) {}
 
   async notify(notification: Notification): Promise<void> {
     const scope = notification.slotId ?? notification.bookingId ?? "";
     // BullMQ 5 не принимает «:» в custom jobId ("Custom Id cannot contain :"),
     // поэтому разделитель — дефис; склейка всё равно однозначна.
-    const jobId = `notify-${notification.kind}-${scope}-${notification.userId ?? ""}`.replace(
+    const seq = await this.redis.incr("notify:seq");
+    const jobId = `notify-${notification.kind}-${scope}-${notification.userId ?? ""}-${seq}`.replace(
       /[^A-Za-z0-9_-]/g,
       "-",
     );

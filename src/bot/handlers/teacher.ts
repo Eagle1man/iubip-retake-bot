@@ -1,4 +1,5 @@
 import type { BotContext } from "../dispatcher.js";
+import { BookingError } from "../../domain/booking/booking.rules.js";
 import { bookingNumber } from "../../domain/staff/role.service.js";
 import { btn, keyboard } from "../keyboards.js";
 import { texts } from "../texts.js";
@@ -114,8 +115,17 @@ export async function handleCloseSlot(ctx: BotContext, slotId: string): Promise<
 }
 
 export async function handleCancelSlot(ctx: BotContext, slotId: string): Promise<void> {
-  const result = await ctx.deps.slots.cancel(slotId);
-  await ctx.send(texts.teacher.slotCancelled(result.notified));
+  try {
+    const result = await ctx.deps.slots.cancel(slotId);
+    await ctx.send(texts.teacher.slotCancelled(result.notified));
+  } catch (error) {
+    // Повторная отмена — не «Что-то пошло не так», а понятный ответ.
+    if (error instanceof BookingError && error.code === "slot_cancelled") {
+      await ctx.send(texts.teacher.slotAlreadyCancelled);
+      return;
+    }
+    throw error;
+  }
 }
 
 /** Создание сессии: выбор преподавателя (для дирекции) или он сам. */

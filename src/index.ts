@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const redis = getRedis(config.REDIS_URL);
   const client = createMaxClient(prisma);
   const queue = createNotifyQueue(config.REDIS_URL);
-  const notifications = new QueueNotificationSink(queue);
+  const notifications = new QueueNotificationSink(queue, getRedis(config.REDIS_URL));
 
   const roles = new RoleService(prisma, config.DIRECTORATE_CHAT_ID);
   const bookings = new BookingService(

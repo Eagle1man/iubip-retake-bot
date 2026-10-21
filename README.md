@@ -24,6 +24,9 @@ PostgreSQL 16 · Prisma 5 · BullMQ 5 + Redis 7 · Vitest 2 · Docker Compose.
 docker compose up --build
 ```
 
+Порт приложения настраивается: если 3000 занят другой службой —
+`APP_PORT=3100 docker compose up --build`.
+
 Контейнер сам накатывает миграции, прогоняет сид и поднимает приложение.
 Проверка:
 
@@ -43,11 +46,16 @@ docker compose logs app | grep DEEP_LINK  # токен для шага 3
 npm install
 Copy-Item .env.example .env    # и поправить DATABASE_URL/REDIS_URL под себя
 npm run db:migrate
+npm run db:reset               # чистый стенд: сносит данные и накатывает миграции с сидом
 npm run db:seed                # печатает DEEP_LINK=rt_<дисциплина>_<сессия>
 npm run dev                    # http://localhost:3000
 ```
 
 Порт берётся из `.env`; если 3000 занят — `$env:PORT=3100; npm run dev`.
+
+Сид идемпотентен: его можно гонять сколько угодно раз — он возвращает стенд
+в исходное состояние (аудитория `А-204`, слот открыт, демо-запись `submitted`).
+Проверено тестом `test/integration/seed.idempotent.test.ts`.
 
 Для этого пути нужны поднятые Postgres 16 и Redis 7 (на этой машине — в WSL2,
 скрипты `scripts/wsl-setup.sh`, `scripts/wsl-grant.sh`).
@@ -57,6 +65,11 @@ npm run dev                    # http://localhost:3000
 Эмулятор открывается на `http://localhost:3000/mock/`. Роли переключаются
 кнопками **Студент (1001)** / **Преподаватель (2001)** / **Дирекция (3001)**;
 уведомления от *других* ролей появляются после кнопки **Обновить**.
+
+Перед прогоном стенд должен быть чистым (`npm run db:reset && npm run db:seed`):
+демо создаёт запись студенту, и повторный прогон упрётся в «у вас уже есть
+активная запись». Автоматическая проверка того же сценария —
+`node scripts/demo12.mjs <DEEP_LINK>` (выход 2 = «стенд не чистый»).
 
 | # | Кто | Действие | Ожидаемый результат |
 |---|---|---|---|
@@ -96,14 +109,14 @@ npx vitest run --coverage
 npm run lint
 ```
 
-Фактический результат (2026-10-21, Windows):
+Фактический результат (2026-10-22, Windows):
 
 | Проверка | Вывод |
 |---|---|
-| `npm test` | **109 passed** (11 файлов), 0 failed |
+| `npm test` | **113 passed** (13 файлов), 0 failed |
 | `npm run test:e2e` | **1 passed** — полный цикл §11.3 |
-| `node scripts/demo12.mjs <DEEP_LINK>` | **19/19 OK** — тот же сценарий §12, но на живом сервере через эмулятор (21.10.2026, `BASE=http://localhost:3100`) |
-| `npx vitest run --coverage` | Stmts **92.51%**, Branch **84.14%**, Funcs **94.73%**, Lines **92.51%** по `src/domain/**` (пороги 80/75/80/80 пройдены) |
+| `node scripts/demo12.mjs <DEEP_LINK>` | **19/19 OK** — сценарий §12 на живом сервере, по HTTP в mock-эндпоинты (тот же путь, что использует эмулятор); на грязном стенде — код 2 с подсказкой |
+| `npx vitest run --coverage` | Stmts **92.60%**, Branch **84.43%**, Funcs **94.73%**, Lines **92.60%** по `src/domain/**` (пороги 80/75/80/80 пройдены) |
 | `npm run lint` | 0 ошибок, 0 предупреждений |
 | `npx tsc --noEmit -p tsconfig.eslint.json` | 0 ошибок (src + test) |
 

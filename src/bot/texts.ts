@@ -60,6 +60,7 @@ export const texts = {
     attendanceMarked: "Явка отмечена.",
     slotClosed: "Сессия закрыта: новые записи не принимаются.",
     slotCancelled: (notified: number) => `Сессия отменена. Уведомлений отправлено: ${notified}.`,
+    slotAlreadyCancelled: "Сессия уже отменена.",
     slotNotFound: "Сессия не найдена.",
     notTeacher: "Этот раздел доступен только преподавателю.",
   },
@@ -80,6 +81,7 @@ export const texts = {
     bookingNotFound: "Запись с таким номером не найдена.",
     notDirectorate: "Этот раздел доступен только дирекции.",
     slotCancelled: (notified: number) => `Сессия отменена. Уведомлений отправлено: ${notified}.`,
+    slotAlreadyCancelled: "Сессия уже отменена.",
   },
   system: {
     help: [

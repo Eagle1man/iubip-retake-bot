@@ -1,8 +1,8 @@
 /**
  * Идемпотентный сид демо-данных для MVP «Запись на пересдачу».
  * Повторный запуск не падает: дисциплины/преподаватели/роли — upsert,
- * сессия — поиск по существующей открытой, запись — upsert по паре
- * (paymentToken, slotId).
+ * сессия — upsert по фиксированному id (аудитория и статус приводятся
+ * к исходным), запись — upsert по паре (paymentToken, slotId).
  *
  * В конце печатает:
  *   DEEP_LINK=rt_<disciplineId>_<slotId>   (формат парсит parsePayload в src/bot/handlers/start.ts)
@@ -10,7 +10,6 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import type { ExamSlot } from "@prisma/client";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -35,6 +34,9 @@ loadEnv();
 const prisma = new PrismaClient();
 
 const NOW = new Date();
+
+/** Слот демо-сессии: фиксированный id, чтобы сид не создавал второй. */
+const SEED_SLOT_ID = "seed-slot-math-1";
 
 function addDays(date: Date, days: number): Date {
   const result = new Date(date.getTime());
@@ -73,48 +75,36 @@ async function main(): Promise<void> {
   });
 
   // 3. Открытая сессия: дисциплина 1, преподаватель 2001.
+  // Фиксированный id: сид работает всегда со своим слотом и никогда не плодит
+  // новые. Раньше слот искался по room="А-204" — демо (шаг «смена аудитории»)
+  // менял аудиторию, следующий сид не находил свой слот, создавал второй, а
+  // запись уходила в create и падала с P2002 по частичному индексу.
   const startsAt = addDays(NOW, 7);
   const registrationDeadline = addDays(NOW, 5);
-  const existingSlot = await prisma.examSlot.findFirst({
-    where: {
+  const slot = await prisma.examSlot.upsert({
+    where: { id: SEED_SLOT_ID },
+    update: {
       disciplineId: math.id,
       teacherId: ivanova.id,
+      startsAt,
       room: "А-204",
+      expectedCapacity: 30,
+      alertThreshold: 30,
+      registrationDeadline,
+      status: "open",
+    },
+    create: {
+      id: SEED_SLOT_ID,
+      disciplineId: math.id,
+      teacherId: ivanova.id,
+      startsAt,
+      room: "А-204",
+      expectedCapacity: 30,
+      alertThreshold: 30,
+      registrationDeadline,
+      status: "open",
     },
   });
-  let slot: ExamSlot;
-  if (existingSlot) {
-    if (existingSlot.status === "open") {
-      slot = existingSlot;
-    } else {
-      // Слот был отменён (или в другом состоянии) в ходе проверок —
-      // восстановить его в открытое состояние с актуальными датами.
-      // Иначе сид не стал бы идемпотентным: создать заново пришлось бы
-      // второй раз и столкнуться с ограничением на (disciplineId, studentFio)
-      // для записей в статусах submitted/paid.
-      slot = await prisma.examSlot.update({
-        where: { id: existingSlot.id },
-        data: {
-          status: "open",
-          startsAt,
-          registrationDeadline,
-        },
-      });
-    }
-  } else {
-    slot = await prisma.examSlot.create({
-      data: {
-        disciplineId: math.id,
-        teacherId: ivanova.id,
-        startsAt,
-        room: "А-204",
-        expectedCapacity: 30,
-        alertThreshold: 30,
-        registrationDeadline,
-        status: "open",
-      },
-    });
-  }
 
   // 4. Тестовый платёж: запись на сессию (studentUserId — строка "1002").
   await prisma.booking.upsert({
