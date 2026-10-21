@@ -57,6 +57,7 @@ export const texts = {
     askRoom: "Введите аудиторию.",
     askDiscipline: "Выберите дисциплину для сессии.",
     slotCreated: (id: string) => `Сессия создана: ${id}.`,
+    slotConflict: "У этого преподавателя уже есть сессия в это время. Выберите другое время.",
     attendanceMarked: "Явка отмечена.",
     slotClosed: "Сессия закрыта: новые записи не принимаются.",
     slotCancelled: (notified: number) => `Сессия отменена. Уведомлений отправлено: ${notified}.`,

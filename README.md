@@ -113,7 +113,7 @@ npm run lint
 
 | Проверка | Вывод |
 |---|---|
-| `npm test` | **113 passed** (13 файлов), 0 failed |
+| `npm test` | **114 passed** (13 файлов), 0 failed |
 | `npm run test:e2e` | **1 passed** — полный цикл §11.3 |
 | `node scripts/demo12.mjs <DEEP_LINK>` | **19/19 OK** — сценарий §12 на живом сервере, по HTTP в mock-эндпоинты (тот же путь, что использует эмулятор); на грязном стенде — код 2 с подсказкой |
 | `npx vitest run --coverage` | Stmts **92.60%**, Branch **84.43%**, Funcs **94.73%**, Lines **92.60%** по `src/domain/**` (пороги 80/75/80/80 пройдены) |

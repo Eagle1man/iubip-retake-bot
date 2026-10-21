@@ -185,17 +185,29 @@ export async function handleSlotRoom(ctx: BotContext, room: string): Promise<voi
     return;
   }
 
-  const created = await ctx.deps.slots.create({
-    disciplineId: data.slotDisciplineId,
-    teacherId: data.teacherId,
-    startsAt: new Date(data.slotStartsAt),
-    room: room.trim(),
-    expectedCapacity: 30,
-    alertThreshold: 30,
-    registrationDeadline: new Date(new Date(data.slotStartsAt).getTime() - 24 * 3_600_000),
-  });
+  try {
+    const created = await ctx.deps.slots.create({
+      disciplineId: data.slotDisciplineId,
+      teacherId: data.teacherId,
+      startsAt: new Date(data.slotStartsAt),
+      room: room.trim(),
+      expectedCapacity: 30,
+      alertThreshold: 30,
+      registrationDeadline: new Date(new Date(data.slotStartsAt).getTime() - 24 * 3_600_000),
+    });
+    await ctx.send(texts.teacher.slotCreated(created.slotId));
+  } catch (error) {
+    // Домен отвечает «У этого преподавателя уже есть сессия в это время» —
+    // пользователь должен видеть это, а не «Что-то пошло не так».
+    if (error instanceof BookingError && error.code === "slot_conflict") {
+      await ctx.send(texts.teacher.slotConflict);
+      // Состояние сбрасываем: иначе следующий ввод будет истолкован как аудитория.
+      await ctx.deps.sessions.reset(ctx.event.userId);
+      return;
+    }
+    throw error;
+  }
 
-  await ctx.send(texts.teacher.slotCreated(created.slotId));
   await ctx.deps.sessions.reset(ctx.event.userId);
 }
 

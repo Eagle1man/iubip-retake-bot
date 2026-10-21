@@ -215,3 +215,51 @@ describe("GET /internal/export/bookings.csv (§9)", () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+describe("создание сессии ботом: доменная ошибка не прячется", () => {
+  const bot = (payload: Record<string, unknown>) =>
+    h.app.inject({ method: "POST", url: "/mock/max/inject", payload: { userId: "2001", ...payload } });
+
+  it("сессия на занятое время → понятный ответ, состояние сброшено", async () => {
+    const slot = await h.prisma.examSlot.findUnique({ where: { id: base.slotId } });
+    if (!slot) throw new Error("нет базовой сессии");
+
+    // Занятое время: отдельная сессия на ту же минуту у того же преподавателя.
+    // Секунды обнуляем — бот вводит время с точностью до минуты.
+    const busy = new Date(slot.startsAt);
+    busy.setSeconds(0, 0);
+    await h.prisma.examSlot.create({
+      data: {
+        disciplineId: base.disciplineId,
+        teacherId: base.teacherId,
+        startsAt: busy,
+        room: "З-1",
+        registrationDeadline: new Date(busy.getTime() - 24 * 3_600_000),
+        status: "open",
+      },
+    });
+
+    const d = busy;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const when = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+    await bot({ text: "Создать сессию" });
+    const disciplineBtn = h.client
+      .lastFor("2001")
+      ?.keyboard?.buttons.flat()
+      .find((b) => b.callbackData.startsWith("sd:"));
+    expect(disciplineBtn).toBeDefined();
+
+    await bot({ callbackData: disciplineBtn?.callbackData });
+    await bot({ text: when });
+    await bot({ text: "А-999" });
+
+    const answer = h.client.lastFor("2001")?.text ?? "";
+    expect(answer).toContain("уже есть сессия в это время");
+    expect(answer).not.toContain("Что-то пошло не так");
+
+    // Состояние сброшено: следующий ввод не трактуется как аудитория.
+    await bot({ text: "А-999" });
+    expect(h.client.lastFor("2001")?.text ?? "").not.toContain("Введите аудиторию");
+  });
+});
