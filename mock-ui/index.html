@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Эмулятор чата MAX — запись на пересдачу</title>
+<style>
+  :root { --bg:#f4f6f8; --me:#d8e2f0; --bot:#ffffff; }
+  body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg); }
+  .app { max-width: 720px; margin: 0 auto; padding: 12px; }
+  h1 { font-size: 16px; margin: 8px 0; }
+  .roles { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .roles button { padding: 6px 10px; border: 1px solid #b9c6d6; background: #fff; border-radius: 8px; cursor: pointer; }
+  .roles button.active { background: #2f6db5; color: #fff; border-color: #2f6db5; }
+  .row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+  input[type=text], textarea { flex: 1; padding: 6px 8px; border: 1px solid #c5cfda; border-radius: 8px; font: inherit; }
+  textarea { width: 100%; height: 90px; resize: vertical; }
+  button.act { padding: 6px 12px; border: 1px solid #b9c6d6; background: #fff; border-radius: 8px; cursor: pointer; }
+  button.act.primary { background: #2f6db5; color: #fff; border-color: #2f6db5; }
+  .chat { background: #e6ebf1; border-radius: 10px; padding: 10px; min-height: 240px; max-height: 55vh; overflow: auto; }
+  .msg { margin: 8px 0; padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; box-shadow: 0 1px 1px rgba(0,0,0,.06); }
+  .msg.from-user { background: var(--me, var(--me, #cfe3c9)); }
+  .msg.from-me { background: #cfe3c9; }
+  .msg.from-bot { background: var(--bot); }
+  .kbd { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+  .kbd button { text-align: left; background: #fff; border: 1px solid #b9c6d6; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+  .meta { font-size: 11px; color: #6b7a8c; margin-top: 4px; }
+  .hint { font-size: 12px; color: #4a5a6a; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Эмулятор чата MAX — запись на пересдачу</h1>
+  <div class="roles">
+    <button class="act" data-user="1001">Студент (1001)</button>
+    <button class="act" data-user="2001">Преподаватель (2001)</button>
+    <button class="act" data-user="3001">Дирекция (3001)</button>
+    <input id="userId" type="text" style="max-width:140px" value="1001">
+    <button class="act" onclick="refresh()">Обновить</button>
+  </div>
+
+  <div class="chat" id="chat"></div>
+
+  <div class="row">
+    <button class="act primary" onclick="start()">Отправить /start</button>
+    <input id="payload" type="text" placeholder="payload (токен deep link), можно оставить пустым">
+  </div>
+  <div class="row">
+    <input id="text" type="text" placeholder="Сообщение пользователем (например: Петрова Анна Ивановна)">
+    <button class="act" onclick="sendText()">Отправить</button>
+  </div>
+  <div class="row">
+    <button class="act" onclick="pickFile()">Приложить чек</button>
+    <button class="act" onclick="sendCancelMenu()">Мои записи</button>
+  </div>
+  <details>
+    <summary class="hint">Импорт реестра (текст CSV)</summary>
+    <textarea id="csv" placeholder="fio,amount,paid_at,purpose&#10;Петрова Анна Ивановна,500,2026-10-14,оплата"></textarea>
+    <button class="act" onclick="sendCsv()">Отправить реестр</button>
+  </details>
+  <p class="hint">Уведомления от других ролей появляются здесь после «Обновить».</p>
+</div>
+
+<script>
+const USER = document.getElementById("userId");
+const CHAT = document.getElementById("chat");
+
+document.querySelectorAll(".roles button[data-user]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    USER.value = btn.dataset.user;
+    markActive(btn);
+    refresh();
+  });
+});
+
+function markActive(active) {
+  document.querySelectorAll(".roles button[data-user]").forEach((b) => b.classList.toggle("active", b === active));
+}
+markActive(document.querySelector(".roles button[data-user='1001']"));
+
+async function inject(body) {
+  const res = await fetch("/mock/max/inject", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: USER.value, ...body }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert("Инъекция отклонена: " + (data.error || res.status));
+    return null;
+  }
+  await refresh();
+}
+
+function start() {
+  const payload = document.getElementById("payload").value.trim();
+  inject({ text: "/start" + (payload ? " " + payload : "") });
+}
+function sendText() {
+  const text = document.getElementById("text").value;
+  if (!text.trim()) return;
+  document.getElementById("text").value = "";
+  inject({ text });
+}
+function sendCsv() {
+  const csv = document.getElementById("csv").value;
+  if (!csv.trim()) return;
+  // Дирекция в состоянии «Импорт реестра» ожидает текст CSV.
+  inject({ text: csv, callbackData: undefined });
+}
+
+function pickFile() {
+  // Шаг 1: бот ждёт файл; шаг 2: отправляем сам файл (mock — фиктивный файл).
+  inject({ callbackData: "attach_receipt" }).then(() => inject({ file: { name: "receipt.jpg" } }));
+}
+function sendCancelMenu() {
+  inject({ text: "Мои записи" });
+}
+
+async function refresh() {
+  const res = await fetch(`/mock/history?userId=${encodeURIComponent(USER.value)}`);
+  if (!res.ok) {
+    CHAT.innerHTML = `<div class="msg from-bot">История недоступна (HTTP ${res.status}).</div>`;
+    return;
+  }
+  const data = await res.json();
+  render(data.messages || []);
+}
+
+function render(messages) {
+  CHAT.innerHTML = "";
+  let lastKeyboard = null;
+
+  if (messages.length === 0) {
+    CHAT.innerHTML = '<div class="msg from-bot">Сообщений нет. Нажмите «Отправить /start».</div>';
+    return;
+  }
+
+  for (const m of messages) {
+    const div = document.createElement("div");
+    div.className = "msg from-bot";
+    div.textContent = m.text;
+    CHAT.appendChild(div);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${new Date(m.at).toLocaleTimeString()} · ${m.kind} · ${m.status}`;
+    CHAT.appendChild(meta);
+
+    if (m.keyboard) lastKeyboard = m.keyboard;
+  }
+
+  if (lastKeyboard && Array.isArray(lastKeyboard.buttons)) {
+    const row = document.createElement("div");
+    row.className = "kbd";
+    for (const line of lastKeyboard.buttons) {
+      for (const button of line) {
+        const btn = document.createElement("button");
+        btn.textContent = button.text;
+        btn.onclick = () => inject({ callbackData: button.callbackData });
+        row.appendChild(btn);
+      }
+    }
+    CHAT.appendChild(row);
+  }
+  CHAT.scrollTop = CHAT.scrollHeight;
+}
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

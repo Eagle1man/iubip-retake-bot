@@ -1,0 +1,108 @@
+# Демо-стенд MVP (§12 ТЗ): `docker compose up` поднимает всё, включая миграции и сид.
+# Порты БД и Redis наружу НЕ публикуются: на машине разработчика уже живут
+# локальные Postgres/Redis, проброшенные на те же 5432/6379 — конфликт портов
+# сломал бы `docker compose up` без всякой пользы.
+
+name: iubip-retake-bot
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: iubip
+      POSTGRES_PASSWORD: iubip
+      POSTGRES_DB: iubip_retake
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iubip -d iubip_retake"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://iubip:iubip@db:5432/iubip_retake
+      REDIS_URL: redis://redis:6379
+      MOCK_MAX: "true"
+      MAX_WEBHOOK_SECRET: dev-webhook-secret
+      SERVICE_TOKEN: dev-service-token
+      PAYMENT_API_BASE: http://localhost:3200
+      DIRECTORATE_CHAT_ID: "3001"
+      FILES_DIR: /data/receipts
+      CANCEL_DEADLINE_HOURS: "0"
+      REMINDERS_ENABLED: "false"
+    volumes:
+      - receipts:/data/receipts
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # E2E (§11.3): `docker compose --profile test run --rm e2e`
+  # Собирается из стадии build — там лежат vitest и исходники тестов.
+  e2e:
+    profiles: ["test"]
+    build:
+      context: .
+      target: build
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://iubip:iubip@db:5432/iubip_retake
+      DATABASE_URL_TEST: postgresql://iubip:iubip@db:5432/iubip_retake_test
+      REDIS_URL: redis://redis:6379
+      MOCK_MAX: "true"
+      MAX_WEBHOOK_SECRET: dev-webhook-secret
+      SERVICE_TOKEN: dev-service-token
+      DIRECTORATE_CHAT_ID: "3001"
+      FILES_DIR: /tmp/receipts
+      CANCEL_DEADLINE_HOURS: "0"
+    command: ["npx", "vitest", "run", "--config", "vitest.e2e.config.ts"]
+
+  # Боевой режим с TLS-терминатором (§10): `docker compose --profile prod up -d`
+  caddy:
+    profiles: ["prod"]
+    image: caddy:2-alpine
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  receipts:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,133 @@
+// Prisma-схема MVP записи на пересдачу.
+// Правила предметной области — в src/domain/**, здесь только хранение.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Discipline {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  code      String?    @unique
+  createdAt DateTime   @default(now())
+  slots     ExamSlot[]
+  bookings  Booking[]
+}
+
+model Teacher {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  fio       String
+  createdAt DateTime @default(now())
+  slots     ExamSlot[]
+}
+
+model ExamSlot {
+  id                   String     @id @default(cuid())
+  disciplineId         String
+  discipline           Discipline @relation(fields: [disciplineId], references: [id])
+  teacherId            String
+  teacher              Teacher    @relation(fields: [teacherId], references: [id])
+  startsAt             DateTime
+  room                 String
+  expectedCapacity     Int        @default(30)
+  alertThreshold       Int        @default(30)
+  registrationDeadline DateTime
+  status               String     @default("open")
+  createdAt            DateTime   @default(now())
+  bookings             Booking[]
+
+  @@index([disciplineId, status])
+  @@index([teacherId, status])
+}
+
+model Booking {
+  id            String    @id @default(cuid())
+  slotId        String
+  slot          ExamSlot  @relation(fields: [slotId], references: [id])
+  disciplineId  String
+  discipline    Discipline @relation(fields: [disciplineId], references: [id])
+  teacherId     String
+  studentUserId String?
+  seq           Int       @default(autoincrement()) @unique
+  studentFio    String
+  studentGroup  String
+  amount        Int       @default(500)
+  paymentToken  String?
+  receiptSha256 String?
+  receiptPath   String?
+  status        String    @default("submitted")
+  attendance    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([paymentToken, slotId])
+  @@unique([receiptSha256, slotId])
+  @@index([slotId, status])
+  @@index([disciplineId, status])
+}
+
+model BotSession {
+  userId    String   @id
+  role      String?
+  state     String
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model StaffRole {
+  userId    String   @id
+  role      String
+  teacherId String?
+  createdAt DateTime @default(now())
+}
+
+model NotificationLog {
+  id        String    @id @default(cuid())
+  userId    String
+  slotId    String?
+  bookingId String?
+  kind      String
+  text      String
+  keyboard  Json?
+  status    String
+  error     String?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model RegistryImport {
+  id            String       @id @default(cuid())
+  fileName      String
+  rowsTotal     Int
+  rowsMatched   Int
+  rowsUnmatched Int
+  unmatchedFios Json         @default("[]")
+  createdAt     DateTime     @default(now())
+  rows          RegistryRow[]
+}
+
+model RegistryRow {
+  id               String         @id @default(cuid())
+  importId         String
+  import           RegistryImport @relation(fields: [importId], references: [id])
+  payerFio         String
+  payerFioNorm     String
+  amount           Int
+  paidAt           DateTime?
+  purpose          String?
+  matchedBookingId String?
+  createdAt        DateTime       @default(now())
+
+  @@index([payerFioNorm])
+}

@@ -2,7 +2,7 @@ module.exports = {
   root: true,
   env: { node: true, es2022: true },
   parser: "@typescript-eslint/parser",
-  parserOptions: { ecmaVersion: 2022, sourceType: "module", project: "./tsconfig.json" },
+  parserOptions: { ecmaVersion: 2022, sourceType: "module", project: "./tsconfig.eslint.json" },
   plugins: ["@typescript-eslint"],
   extends: ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
   ignorePatterns: ["node_modules", "dist", "coverage", "prisma/migrations", "test-results"],

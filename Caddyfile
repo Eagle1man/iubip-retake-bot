@@ -1,0 +1,29 @@
+# Caddy для боевого режима (§10 ТЗ): TLS и reverse proxy на приложение.
+# В mock-профиле docker-compose этот контейнер не поднимается.
+#
+# Для реального домена замените `:80` на него — Caddy сам выпустит сертификат:
+#
+#   bot.example.ru {
+#       encode zstd gzip
+#       header {
+#           Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#       }
+#       reverse_proxy app:3000
+#   }
+
+{
+	admin off
+}
+
+:80 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+	}
+
+	# Вебхук MAX, внутренний API, эмулятор — всё за одним прокси.
+	reverse_proxy app:3000
+}
