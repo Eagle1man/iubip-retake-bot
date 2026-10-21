@@ -25,5 +25,6 @@
 	}
 
 	# Вебхук MAX, внутренний API, эмулятор — всё за одним прокси.
-	reverse_proxy app:3000
+	# Боевой контур: контейнер app-prod (docker compose --profile prod).
+	reverse_proxy app-prod:3000
 }

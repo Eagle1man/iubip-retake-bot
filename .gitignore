@@ -3,6 +3,7 @@ dist/
 coverage/
 .env
 .env.local
+.env.production
 *.log
 data/receipts/
 test-results/

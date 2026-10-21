@@ -25,7 +25,8 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
-    "demo:check": "node scripts/demo12.mjs"
+    "demo:check": "node scripts/demo12.mjs",
+    "ci": "node scripts/ci.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "^8.3.1",

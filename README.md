@@ -132,8 +132,39 @@ src/
 mock-ui/       сам эмулятор чата (§8)
 prisma/        schema, миграции, seed, fixtures/registry-demo.csv
 test/          unit · integration · e2e · helpers
-scripts/       разовые помощники (см. DECISIONS.md)
+scripts/       ci.mjs (прогон CI) · demo12.mjs (демо §12) · разовые помощники
+docs/          DEPLOY.md — runbook развёртывания
+.github/       workflows/ci.yml — тот же прогон в CI
 ```
+
+## CI
+
+```powershell
+npm run ci                          # lint → типы → unit+integration → e2e → (docker build, compose e2e)
+npm run ci -- --skip-docker         # без Docker-этапов
+npm run ci -- --require-docker      # падать, если Docker недоступен (режим CI)
+```
+
+Скрипт `scripts/ci.mjs` — один и тот же прогон локально и в CI
+(`.github/workflows/ci.yml`: Node 20, Postgres 16, Redis 7, Docker на раннере).
+Docker-этапы (сборка образа и e2e внутри compose) закрывают критерий приёмки
+«`docker compose up` на чистой машине»; без Docker они **пропускаются с
+явной пометкой**, а не молча.
+
+## Развёртывание
+
+Runbook: [`docs/DEPLOY.md`](docs/DEPLOY.md) — требования, `.env.production.example`,
+демо-стенд, боевой контур, бэкапы, откат, типовые проблемы.
+
+Коротко:
+
+```bash
+cp .env.production.example .env   # заполнить секреты
+docker compose up --build         # демо-стенд (mock, с сидом)
+docker compose --profile prod up -d app-prod caddy   # боевой контур (без сида, TLS)
+```
+
+Публикацию на production выполняет человек, не агент.
 
 ## Что здесь заглушка
 
@@ -151,5 +182,6 @@ scripts/       разовые помощники (см. DECISIONS.md)
 ## Боевой режим
 
 `MOCK_MAX=false` + `MAX_BOT_TOKEN` (+ `MAX_WEBHOOK_SECRET`), TLS-прокси —
-`docker compose --profile prod up -d` (Caddy, `Caddyfile`).
+`docker compose --profile prod up -d app-prod caddy` (Caddy, `Caddyfile`).
+Боевой контур **не получает демо-данных**: сид только у демо-сервиса `app`.
 Публикацию на production выполняет человек, не агент.

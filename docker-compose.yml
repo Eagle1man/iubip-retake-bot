@@ -2,6 +2,16 @@
 # Порты БД и Redis наружу НЕ публикуются: на машине разработчика уже живут
 # локальные Postgres/Redis, проброшенные на те же 5432/6379 — конфликт портов
 # сломал бы `docker compose up` без всякой пользы.
+#
+# ДВА РЕЖИМА:
+#   demo (по умолчанию) — `docker compose up --build`: сервис app, mock-режим,
+#                         сид с демо-данными. Для показа демо.
+#   prod (профиль)      — `docker compose --profile prod up -d app-prod caddy`:
+#                         боевой контур без сида, MOCK_MAX=false, TLS через Caddy.
+#                         Секреты берутся из .env (см. .env.production.example).
+#
+# Почему сервиса два, а не один: сид с демо-данными в бою недопустим, а
+# боевой режим с MOCK_MAX=false не должен подниматься вместе с демо-стендом.
 
 name: iubip-retake-bot
 
@@ -9,13 +19,13 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: iubip
-      POSTGRES_PASSWORD: iubip
-      POSTGRES_DB: iubip_retake
+      POSTGRES_USER: ${DB_USER:-iubip}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-iubip}
+      POSTGRES_DB: ${DB_NAME:-iubip_retake}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U iubip -d iubip_retake"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-iubip} -d ${DB_NAME:-iubip_retake}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -28,6 +38,7 @@ services:
       timeout: 3s
       retries: 20
 
+  # ── Демо-стенд: mock-режим + сид с демо-данными ───────────────
   app:
     build: .
     init: true
@@ -40,7 +51,7 @@ services:
       NODE_ENV: production
       PORT: "3000"
       LOG_LEVEL: info
-      DATABASE_URL: postgresql://iubip:iubip@db:5432/iubip_retake
+      DATABASE_URL: postgresql://${DB_USER:-iubip}:${DB_PASSWORD:-iubip}@db:5432/${DB_NAME:-iubip_retake}
       REDIS_URL: redis://redis:6379
       MOCK_MAX: "true"
       MAX_WEBHOOK_SECRET: dev-webhook-secret
@@ -56,6 +67,46 @@ services:
       # Порт приложения настраивается: на машине, где 3000 занят другой службой,
       # поднимают так: APP_PORT=3100 docker compose up
       - "${APP_PORT:-3000}:3000"
+    # Миграции и сид — только здесь: демо-стенд должен быть с данными.
+    command: ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node dist/index.js"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # ── Боевой контур: без сида, реальный MAX, наружу не торчит ────
+  app-prod:
+    profiles: ["prod"]
+    build: .
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://${DB_USER:?задайте DB_USER в .env}:${DB_PASSWORD:?задайте DB_PASSWORD в .env}@db:5432/${DB_NAME:?задайте DB_NAME в .env}
+      REDIS_URL: redis://redis:6379
+      MOCK_MAX: "false"
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:?задайте MAX_BOT_TOKEN в .env}
+      MAX_API_BASE: ${MAX_API_BASE:-https://platform-api2.max.ru}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:?задайте MAX_WEBHOOK_SECRET в .env}
+      MAX_BOT_NAME: ${MAX_BOT_NAME:-iubip-retake-bot}
+      PAYMENT_API_BASE: ${PAYMENT_API_BASE:-http://host.docker.internal:3200}
+      PAYMENT_API_TOKEN: ${PAYMENT_API_TOKEN:-}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?задайте SERVICE_TOKEN в .env}
+      DIRECTORATE_CHAT_ID: ${DIRECTORATE_CHAT_ID:-3001}
+      FILES_DIR: /data/receipts
+      CANCEL_DEADLINE_HOURS: ${CANCEL_DEADLINE_HOURS:-0}
+      REMINDERS_ENABLED: ${REMINDERS_ENABLED:-false}
+    volumes:
+      - receipts:/data/receipts
+    # Миграции — да, сид — нет: боевой контур не наполняется демо-данными.
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -77,8 +128,8 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: test
-      DATABASE_URL: postgresql://iubip:iubip@db:5432/iubip_retake
-      DATABASE_URL_TEST: postgresql://iubip:iubip@db:5432/iubip_retake_test
+      DATABASE_URL: postgresql://${DB_USER:-iubip}:${DB_PASSWORD:-iubip}@db:5432/${DB_NAME:-iubip_retake}
+      DATABASE_URL_TEST: postgresql://${DB_USER:-iubip}:${DB_PASSWORD:-iubip}@db:5432/${DB_NAME:-iubip_retake}_test
       REDIS_URL: redis://redis:6379
       MOCK_MAX: "true"
       MAX_WEBHOOK_SECRET: dev-webhook-secret
@@ -88,12 +139,13 @@ services:
       CANCEL_DEADLINE_HOURS: "0"
     command: ["npx", "vitest", "run", "--config", "vitest.e2e.config.ts"]
 
-  # Боевой режим с TLS-терминатором (§10): `docker compose --profile prod up -d`
+  # Боевой режим с TLS-терминатором (§10):
+  #   docker compose --profile prod up -d app-prod caddy
   caddy:
     profiles: ["prod"]
     image: caddy:2-alpine
     depends_on:
-      app:
+      app-prod:
         condition: service_healthy
     ports:
       - "80:80"

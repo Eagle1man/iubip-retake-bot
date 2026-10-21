@@ -28,5 +28,6 @@ COPY mock-ui ./mock-ui
 
 EXPOSE 3000
 
-# migrate deploy → seed → запуск: так `docker compose up` даёт рабочий демо-стенд (§12).
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node dist/index.js"]
+# Нейтральная команда: миграции и сид задаёт compose (демо-стенд — с сидом,
+# боевой контур — без него). Запуск образа напрямую: node dist/index.js.
+CMD ["node", "dist/index.js"]
