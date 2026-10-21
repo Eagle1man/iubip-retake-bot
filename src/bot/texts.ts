@@ -26,6 +26,7 @@ export const texts = {
     created: (number: string) =>
       `Вы записаны! Номер записи: ${number}.\n\nПриложите чек об оплате или пропустите этот шаг — чек не обязателен.`,
     receiptAccepted: (number: string) => `Чек приложен к записи ${number}.`,
+    receiptSkipped: (number: string) => `Чек к записи ${number} не приложен.`,
     receiptDuplicate: (number: string) => `Этот чек уже приложен к записи ${number}.`,
     receiptUsedElsewhere: "Этот чек уже приложен к другой записи на эту сессию.",
     myBookings: (list: string[]) =>
@@ -105,6 +106,7 @@ export const STUDENT_TEXT_KEYS = [
   "confirm",
   "created",
   "receiptAccepted",
+  "receiptSkipped",
   "receiptDuplicate",
   "receiptUsedElsewhere",
   "myBookings",

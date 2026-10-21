@@ -146,7 +146,7 @@ export async function handleReceiptSkip(ctx: BotContext): Promise<void> {
     ? await ctx.deps.prisma.booking.findUnique({ where: { id: ctx.session.data.bookingId } })
     : null;
   const number = booking ? bookingNumber(booking.seq) : "";
-  await ctx.send(`${texts.student.admitted}\n\n${texts.student.receiptAccepted(number)}`);
+  await ctx.send(`${texts.student.admitted}\n\n${texts.student.receiptSkipped(number)}`);
   await ctx.deps.sessions.reset(ctx.event.userId);
 }
 

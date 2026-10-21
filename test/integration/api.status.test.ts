@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHarness, resetDb, type Harness } from "../helpers/harness.js";
+import { seedBase } from "../helpers/data.js";
 
 let h: Harness;
 let mockOff: Harness;
@@ -100,6 +101,25 @@ describe("mock-инъекция (§8: работает только при MOCK_
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ accepted: true });
+  });
+
+  it("история отдаёт keyboard — без неё эмулятор не покажет кнопки §12", async () => {
+    await seedBase(h.prisma); // кнопки дисциплин появляются только при наличии данных
+
+    await h.app.inject({
+      method: "POST",
+      url: "/mock/max/inject",
+      payload: { userId: "1001", text: "/start" },
+    });
+    const res = await h.app.inject({ method: "GET", url: "/mock/history?userId=1001" });
+    expect(res.statusCode).toBe(200);
+
+    const messages = res.json().messages as { keyboard?: { buttons?: unknown[][] } | null }[];
+    const withKeyboard = messages.filter((m) => Array.isArray(m.keyboard?.buttons));
+    expect(withKeyboard.length).toBeGreaterThan(0);
+
+    const buttons = (withKeyboard.at(-1)?.keyboard?.buttons ?? []).flat() as { callbackData?: string }[];
+    expect(buttons.some((b) => b.callbackData?.startsWith("d:"))).toBe(true);
   });
 
   it("при MOCK_MAX=false → 404", async () => {

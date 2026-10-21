@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { createHarness, findCallback, resetDb, type Harness } from "../helpers/harness.js";
+import { createHarness, findCallback, lastBotMessage, resetDb, type Harness } from "../helpers/harness.js";
 import { seedBase, seedRoles, type SeedBase } from "../helpers/data.js";
 import { bookingNumber } from "../../src/domain/staff/role.service.js";
 
@@ -51,6 +51,11 @@ it("§11.3: полный цикл записи от deep link до отмены 
   const skipButton = await findCallback(h.prisma, STUDENT, "skip_receipt");
   expect(skipButton).toBe("skip_receipt");
   await inject(STUDENT, { callbackData: skipButton });
+
+  // Пропуск чека не должен звучать как «чек приложен» (вывод живого демо 21.10.2026)
+  const afterSkip = await lastBotMessage(h.prisma, STUDENT);
+  expect(afterSkip?.text).toContain("не приложен");
+  expect(afterSkip?.text).not.toContain("Чек приложен");
 
   const booking = await h.prisma.booking.findFirst({ where: { studentUserId: STUDENT } });
   expect(booking).not.toBeNull();

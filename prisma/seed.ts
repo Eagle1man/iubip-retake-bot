@@ -10,6 +10,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import type { ExamSlot } from "@prisma/client";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -79,12 +80,29 @@ async function main(): Promise<void> {
       disciplineId: math.id,
       teacherId: ivanova.id,
       room: "А-204",
-      status: "open",
     },
   });
-  const slot =
-    existingSlot ??
-    (await prisma.examSlot.create({
+  let slot: ExamSlot;
+  if (existingSlot) {
+    if (existingSlot.status === "open") {
+      slot = existingSlot;
+    } else {
+      // Слот был отменён (или в другом состоянии) в ходе проверок —
+      // восстановить его в открытое состояние с актуальными датами.
+      // Иначе сид не стал бы идемпотентным: создать заново пришлось бы
+      // второй раз и столкнуться с ограничением на (disciplineId, studentFio)
+      // для записей в статусах submitted/paid.
+      slot = await prisma.examSlot.update({
+        where: { id: existingSlot.id },
+        data: {
+          status: "open",
+          startsAt,
+          registrationDeadline,
+        },
+      });
+    }
+  } else {
+    slot = await prisma.examSlot.create({
       data: {
         disciplineId: math.id,
         teacherId: ivanova.id,
@@ -95,7 +113,8 @@ async function main(): Promise<void> {
         registrationDeadline,
         status: "open",
       },
-    }));
+    });
+  }
 
   // 4. Тестовый платёж: запись на сессию (studentUserId — строка "1002").
   await prisma.booking.upsert({

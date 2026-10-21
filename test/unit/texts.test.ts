@@ -24,6 +24,8 @@ function studentText(key: (typeof STUDENT_TEXT_KEYS)[number]): string {
       return fn("B-1");
     case "receiptAccepted":
       return fn("B-1");
+    case "receiptSkipped":
+      return fn("B-1");
     case "receiptDuplicate":
       return fn("B-1");
     case "myBookings":

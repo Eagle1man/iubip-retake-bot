@@ -82,6 +82,8 @@ export async function maxRoutes(app: FastifyInstance, ctx: AppContext): Promise<
         kind: row.kind,
         text: row.text,
         status: row.status,
+        // Без keyboard у эмулятора не из чего рисовать кнопки — §12 состоит из нажатий.
+        keyboard: row.keyboard ?? null,
         at: row.createdAt.toISOString(),
       })),
     };

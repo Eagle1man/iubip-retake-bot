@@ -65,8 +65,9 @@ describe("createRealClient (§10: ретраи, таймаут, токены н�
       maxRetries: 1,
       fetch,
     });
+    // И пользовательская формулировка, и деталь таймаута должны быть в сообщении.
     await expect(client.sendMessage("1001", "привет")).rejects.toThrow(
-      "MAX недоступен",
+      /MAX недоступен: AbortSignal timed out/,
     );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
