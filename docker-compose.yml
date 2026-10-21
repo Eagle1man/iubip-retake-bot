@@ -3,19 +3,26 @@
 # локальные Postgres/Redis, проброшенные на те же 5432/6379 — конфликт портов
 # сломал бы `docker compose up` без всякой пользы.
 #
-# ДВА РЕЖИМА:
-#   demo (по умолчанию) — `docker compose up --build`: сервис app, mock-режим,
-#                         сид с демо-данными. Для показа демо.
-#   prod (профиль)      — `docker compose --profile prod up -d app-prod caddy`:
-#                         боевой контур без сида, MOCK_MAX=false, TLS через Caddy.
-#                         Секреты берутся из .env (см. .env.production.example).
+# ДВА РЕЖИМА, РАЗНЫЕ БАЗЫ И ТОМА:
+#   demo (по умолчанию) — `docker compose up --build`: db, redis, app. Mock-режим,
+#                         сид с демо-данными, своя база (том pgdata).
+#   prod (профиль)      — `docker compose --profile prod up -d app-prod db-prod redis-prod caddy`:
+#                         боевой контур: своя база (том pgdata_prod), без сида,
+#                         MOCK_MAX=false, наружу только Caddy.
 #
-# Почему сервиса два, а не один: сид с демо-данными в бою недопустим, а
-# боевой режим с MOCK_MAX=false не должен подниматься вместе с демо-стендом.
+# Почему базы раздельные: демо-стенд и боевой контур не должны делить ни базу,
+# ни том — иначе сид демо попадёт в боевые данные.
+#
+# ПОЧЕМУ ЗДЕСЬ НЕТ ${ПЕРЕМЕННАЯ:?текст}: compose интерполирует переменные для
+# ВСЕХ сервисов, включая сервисы за неактивным профилем. Обязательное
+# значение (${VAR:?}) ломало бы и `docker compose up` без .env, и CI, где
+# боевые секреты не заданы. Обязательность проверяет приложение при старте
+# (src/config.ts) — с понятным сообщением.
 
 name: iubip-retake-bot
 
 services:
+  # ── Демо-стенд ───────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     environment:
@@ -38,7 +45,6 @@ services:
       timeout: 3s
       retries: 20
 
-  # ── Демо-стенд: mock-режим + сид с демо-данными ───────────────
   app:
     build: .
     init: true
@@ -54,8 +60,8 @@ services:
       DATABASE_URL: postgresql://${DB_USER:-iubip}:${DB_PASSWORD:-iubip}@db:5432/${DB_NAME:-iubip_retake}
       REDIS_URL: redis://redis:6379
       MOCK_MAX: "true"
-      MAX_WEBHOOK_SECRET: dev-webhook-secret
-      SERVICE_TOKEN: dev-service-token
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-dev-webhook-secret}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-dev-service-token}
       PAYMENT_API_BASE: http://localhost:3200
       DIRECTORATE_CHAT_ID: "3001"
       FILES_DIR: /data/receipts
@@ -75,36 +81,64 @@ services:
       timeout: 5s
       retries: 12
 
-  # ── Боевой контур: без сида, реальный MAX, наружу не торчит ────
+  # ── Боевой контур (профиль prod): своя база, без сида ─────────
+  db-prod:
+    profiles: ["prod"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-iubip}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-iubip}
+      POSTGRES_DB: ${DB_NAME:-iubip_retake}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-iubip} -d ${DB_NAME:-iubip_retake}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis-prod:
+    profiles: ["prod"]
+    image: redis:7-alpine
+    volumes:
+      - redisdata_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   app-prod:
     profiles: ["prod"]
     build: .
     init: true
     depends_on:
-      db:
+      db-prod:
         condition: service_healthy
-      redis:
+      redis-prod:
         condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: "3000"
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DATABASE_URL: postgresql://${DB_USER:?задайте DB_USER в .env}:${DB_PASSWORD:?задайте DB_PASSWORD в .env}@db:5432/${DB_NAME:?задайте DB_NAME в .env}
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${DB_USER:-iubip}:${DB_PASSWORD:-iubip}@db-prod:5432/${DB_NAME:-iubip_retake}
+      REDIS_URL: redis://redis-prod:6379
       MOCK_MAX: "false"
-      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:?задайте MAX_BOT_TOKEN в .env}
+      # Пустые значения — не ошибка compose: обязательность проверяет приложение
+      # (config.ts) и падает с понятным текстом, а не «required variable is missing».
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
       MAX_API_BASE: ${MAX_API_BASE:-https://platform-api2.max.ru}
-      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:?задайте MAX_WEBHOOK_SECRET в .env}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-}
       MAX_BOT_NAME: ${MAX_BOT_NAME:-iubip-retake-bot}
       PAYMENT_API_BASE: ${PAYMENT_API_BASE:-http://host.docker.internal:3200}
       PAYMENT_API_TOKEN: ${PAYMENT_API_TOKEN:-}
-      SERVICE_TOKEN: ${SERVICE_TOKEN:?задайте SERVICE_TOKEN в .env}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
       DIRECTORATE_CHAT_ID: ${DIRECTORATE_CHAT_ID:-3001}
       FILES_DIR: /data/receipts
       CANCEL_DEADLINE_HOURS: ${CANCEL_DEADLINE_HOURS:-0}
       REMINDERS_ENABLED: ${REMINDERS_ENABLED:-false}
     volumes:
-      - receipts:/data/receipts
+      - receipts_prod:/data/receipts
     # Миграции — да, сид — нет: боевой контур не наполняется демо-данными.
     command: ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
     healthcheck:
@@ -140,7 +174,7 @@ services:
     command: ["npx", "vitest", "run", "--config", "vitest.e2e.config.ts"]
 
   # Боевой режим с TLS-терминатором (§10):
-  #   docker compose --profile prod up -d app-prod caddy
+  #   docker compose --profile prod up -d app-prod db-prod redis-prod caddy
   caddy:
     profiles: ["prod"]
     image: caddy:2-alpine
@@ -157,6 +191,9 @@ services:
 
 volumes:
   pgdata:
+  pgdata_prod:
+  redisdata_prod:
   receipts:
+  receipts_prod:
   caddy_data:
   caddy_config:

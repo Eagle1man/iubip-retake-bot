@@ -51,6 +51,12 @@ describe("config", () => {
     await expect(loadConfig()).rejects.toThrow("MAX_BOT_TOKEN обязателен");
   });
 
+  it("MOCK_MAX=false без MAX_WEBHOOK_SECRET → throw (иначе вебхук не защищён)", async () => {
+    // Пустая строка, а не удаление переменной: .env подгрузит значение заново.
+    setEnv({ MOCK_MAX: "false", MAX_BOT_TOKEN: "test-bot-token", MAX_WEBHOOK_SECRET: "" });
+    await expect(loadConfig()).rejects.toThrow("MAX_WEBHOOK_SECRET обязателен");
+  });
+
   it("нечисловой PORT → throw", async () => {
     setEnv({ PORT: "not-a-number" });
     await expect(loadConfig()).rejects.toThrow(/Невалидное окружение/);

@@ -62,5 +62,14 @@ if (!data.MOCK_MAX && !data.MAX_BOT_TOKEN) {
   throw new Error("MAX_BOT_TOKEN обязателен, когда MOCK_MAX=false");
 }
 
+/**
+ * Секрет подписи вебхука в боевом режиме обязателен: без него подпись
+ * проверяется против пустой строки, и вебхук либо не принимается вовсе,
+ * либо (если проверку ослабить) принимается без проверки.
+ */
+if (!data.MOCK_MAX && !data.MAX_WEBHOOK_SECRET) {
+  throw new Error("MAX_WEBHOOK_SECRET обязателен, когда MOCK_MAX=false");
+}
+
 export const config = Object.freeze(data);
 export type AppConfig = typeof config;

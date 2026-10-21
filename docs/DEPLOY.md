@@ -26,8 +26,16 @@ cp .env.production.example .env
 ```
 
 Пароль БД попадает в `DATABASE_URL` как есть — **без спецсимволов** (`@ : / ? #`),
-иначе URL не разберётся. Если нужен сложный пароль — задайте `DATABASE_URL`
-целиком через `env_file`, а не через `DB_PASSWORD`.
+иначе URL не разберётся. Compose собирает `DATABASE_URL` из `DB_USER`,
+`DB_PASSWORD` и `DB_NAME`; задать URL целиком нельзя (`environment:` имеет
+приоритет над `env_file`).
+
+**Демо-стенду `.env` не нужен:** в compose у него значения по умолчанию
+(база `iubip/iubip`, mock-режим). Обязательные подстановки `${VAR:?текст}`
+в compose **не используются**: compose интерполирует переменные для всех
+сервисов, включая сервисы за неактивным профилем, и такая подстановка сломала
+бы и `docker compose up` без `.env`, и CI. Обязательность боевых секретов
+проверяет само приложение при старте (см. §4).
 
 ## 3. Демо-стенд (без токена MAX)
 
@@ -51,8 +59,12 @@ docker compose logs app | grep DEEP_LINK # токен для демо-сцена
 ## 4. Боевой контур
 
 ```bash
-docker compose --profile prod up -d app-prod caddy
+docker compose --profile prod up -d app-prod db-prod redis-prod caddy
 ```
+
+Сервисы перечислены **явно**: без имён compose поднял бы и демо-стенд
+(`app` без профиля) — а он сеет демо-данные. У боевого контура **своя база**
+(том `pgdata_prod`), так что демо-данные в боевые таблицы не попадают.
 
 Что отличается от демо:
 
@@ -61,10 +73,10 @@ docker compose --profile prod up -d app-prod caddy
 - наружу торчит только Caddy (80/443), приложение доступно лишь во внутренней сети;
 - миграции применяются при старте (`prisma migrate deploy`).
 
-Compose **не стартует без секретов**: переменные `MAX_BOT_TOKEN`,
-`MAX_WEBHOOK_SECRET`, `SERVICE_TOKEN`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
-объявлены как обязательные — при их отсутствии compose выдаст ошибку подстановки,
-а не поднимет бота «наполовину».
+**Обязательные секреты проверяет приложение**, а не compose: если
+`MAX_BOT_TOKEN` или `MAX_WEBHOOK_SECRET` не заданы, контейнер `app-prod`
+упадёт с сообщением «MAX_BOT_TOKEN обязателен, когда MOCK_MAX=false» (или
+«MAX_WEBHOOK_SECRET обязателен…»), а не «required variable is missing».
 
 ### Проверка после старта
 
@@ -98,8 +110,8 @@ Redis 7, Docker на раннере). Docker-этап закрывает кри�
 ```bash
 cd /opt/iubip-retake-bot
 git pull
-docker compose exec db pg_dump -U "$DB_USER" "$DB_NAME" > backup-$(date +%F).sql
-docker compose --profile prod up -d --build app-prod caddy
+docker compose exec db-prod pg_dump -U "$DB_USER" "$DB_NAME" > backup-$(date +%F).sql
+docker compose --profile prod up -d --build app-prod db-prod redis-prod caddy
 docker compose logs -f app-prod
 ```
 
@@ -112,36 +124,37 @@ docker compose logs -f app-prod
 ## 7. Откат
 
 ```bash
-docker compose --profile prod down          # остановить контур
-docker compose --profile prod up -d app-prod caddy   # поднять предыдущий коммит
+docker compose --profile prod down app-prod db-prod redis-prod caddy   # остановить контур
+docker compose --profile prod up -d app-prod db-prod redis-prod caddy # поднять предыдущий коммит
 ```
 
 Откат кода не откатывает миграции: если миграция необратима, восстанавливают базу
 из бэкапа:
 
 ```bash
-docker compose exec -T db psql -U "$DB_USER" -d postgres < backup-2026-11-02.sql
+docker compose exec -T db-prod psql -U "$DB_USER" -d postgres < backup-2026-11-02.sql
 ```
 
 ## 8. Бэкапы
 
 ```bash
 # Разовая выгрузка
-docker compose exec db pg_dump -U "$DB_USER" "$DB_NAME" | gzip > backup.sql.gz
+docker compose exec db-prod pg_dump -U "$DB_USER" "$DB_NAME" | gzip > backup.sql.gz
 
 # По расписанию (cron на сервере), копию забирать наружу отдельно
-0 3 * * * cd /opt/iubip-retake-bot && docker compose exec -T db pg_dump -U iubip iubip_retake | gzip > /var/backups/iubip-$(date +\%F).sql.gz
+0 3 * * * cd /opt/iubip-retake-bot && docker compose exec -T db-prod pg_dump -U iubip iubip_retake | gzip > /var/backups/iubip-$(date +\%F).sql.gz
 ```
 
-Каталог `FILES_DIR` (том `receipts`, по умолчанию `/data/receipts`) — чеки
-студентов; он не входит в дамп БД, копируется отдельно.
+Каталог `FILES_DIR` (том `receipts_prod` в бою, `receipts` в демо; по
+умолчанию `/data/receipts`) — чеки студентов; он не входит в дамп БД,
+копируется отдельно.
 
 ## 9. Логи и диагностика
 
 ```bash
 docker compose logs -f app-prod        # логи приложения
 docker compose ps                      # состояние контейнеров и healthcheck
-docker compose exec db psql -U "$DB_USER" -d "$DB_NAME" -c "\dt"
+docker compose exec db-prod psql -U "$DB_USER" -d "$DB_NAME" -c "\dt"
 ```
 
 Типовые проблемы:
