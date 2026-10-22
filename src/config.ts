@@ -31,7 +31,9 @@ const EnvSchema = z.object({
 
   PAYMENT_API_BASE: z.string().url().default("http://localhost:3200"),
   PAYMENT_API_TOKEN: z.string().default("dev-secret"),
-  SERVICE_TOKEN: z.string().min(1, "SERVICE_TOKEN обязателен").default("dev-service-token"),
+  // Без дефолта: тихий откат на публичную константу открыл бы внутренний API.
+  // В бою и в демо переменная задаётся (.env / compose).
+  SERVICE_TOKEN: z.string().min(1, "SERVICE_TOKEN обязателен"),
 
   CANCEL_DEADLINE_HOURS: z.coerce.number().int().min(0).default(0),
   DEFAULT_ALERT_THRESHOLD: z.coerce.number().int().positive().default(30),

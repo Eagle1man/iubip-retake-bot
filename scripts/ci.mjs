@@ -60,7 +60,11 @@ function checkComposeAndEnv() {
     .map((line) => line.replace(/#.*$/, ""))
     .join("\n");
 
-  const strict = [...new Set([...composeCode.matchAll(/\$\{([A-Z0-9_]+):\?/g)].map((m) => m[1]))];
+  // Ловим ОБЕ формы обязательной подстановки: ${VAR:?текст} и ${VAR?текст} —
+  // compose понимает обе, и обе ломают config одинаково.
+  const strict = [
+    ...new Set([...composeCode.matchAll(/\$\{([A-Z0-9_]+)(:\?|\?)/g)].map((m) => m[1])),
+  ];
   console.log(`\n=== compose: обязательных подстановок ${strict.length}`);
   if (strict.length > 0) {
     console.error(
@@ -75,6 +79,7 @@ function checkComposeAndEnv() {
     "MAX_BOT_TOKEN",
     "MAX_WEBHOOK_SECRET",
     "SERVICE_TOKEN",
+    "DIRECTORATE_CHAT_ID",
     "DB_USER",
     "DB_PASSWORD",
     "DB_NAME",

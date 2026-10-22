@@ -242,9 +242,11 @@ migrations, but not applied»). Поэтому `scripts/migrations-fix.mjs` ну
 **всех** сервисов, включая сервисы за неактивным профилем. Обязательная
 подстановка ломала и `docker compose up` без `.env`, и CI, где боевые секреты
 не заданы. Теперь в compose только значения по умолчанию (`${VAR:-}`), а
-обязательность проверяет приложение при старте: `MAX_BOT_TOKEN` и
+Обязательность проверяет приложение при старте: `MAX_BOT_TOKEN` и
 `MAX_WEBHOOK_SECRET` обязательны при `MOCK_MAX=false` (иначе бот уходит в сеть
-без токена, а вебхук — без проверки подписи), `SERVICE_TOKEN` — всегда.
+без токена, а вебхук — без проверки подписи), `SERVICE_TOKEN` — всегда, и у него
+**нет значения по умолчанию**: тихий откат на публичную константу открыл бы
+внутренний API наружу (Caddy проксирует `/internal/*` в сеть).
 Это проверяет `scripts/ci.mjs` (в compose не должно быть `${VAR:?}`) и
 `test/unit/config.test.ts`.
 
@@ -256,8 +258,9 @@ migrations, but not applied»). Поэтому `scripts/migrations-fix.mjs` ну
 ## 20. CI: один скрипт для локалки и для GitHub Actions
 
 `scripts/ci.mjs` (`npm run ci`) выполняет шаги: lint → типы → unit+integration
-→ e2e → сборка образа → e2e в compose. `.github/workflows/ci.yml` вызывает тот
-же скрипт (Node 20, Postgres 16, Redis 7, Docker на раннере).
+→ e2e → `docker compose config` (валидация манифеста и подстановок) → сборка
+образа → e2e в compose. `.github/workflows/ci.yml` вызывает тот же скрипт
+(Node 20, Postgres 16, Redis 7, Docker на раннере).
 
 **Почему скрипт, а не только workflow:** на машине разработчика Docker не
 установлен, поэтому workflow нельзя было бы проверить, а прогон должен быть

@@ -140,7 +140,7 @@ docs/          DEPLOY.md — runbook развёртывания
 ## CI
 
 ```powershell
-npm run ci                          # lint → типы → unit+integration → e2e → (docker build, compose e2e)
+npm run ci                          # lint → типы → unit+integration → e2e → compose config → docker build → compose e2e
 npm run ci -- --skip-docker         # без Docker-этапов
 npm run ci -- --require-docker      # падать, если Docker недоступен (режим CI)
 ```

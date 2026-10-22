@@ -57,6 +57,11 @@ describe("config", () => {
     await expect(loadConfig()).rejects.toThrow("MAX_WEBHOOK_SECRET обязателен");
   });
 
+  it("пустой SERVICE_TOKEN → throw (внутренний API не должен открываться по умолчанию)", async () => {
+    setEnv({ SERVICE_TOKEN: "" });
+    await expect(loadConfig()).rejects.toThrow("SERVICE_TOKEN обязателен");
+  });
+
   it("нечисловой PORT → throw", async () => {
     setEnv({ PORT: "not-a-number" });
     await expect(loadConfig()).rejects.toThrow(/Невалидное окружение/);

@@ -124,9 +124,16 @@ docker compose logs -f app-prod
 ## 7. Откат
 
 ```bash
-docker compose --profile prod down app-prod db-prod redis-prod caddy   # остановить контур
-docker compose --profile prod up -d app-prod db-prod redis-prod caddy # поднять предыдущий коммит
+# Остановить боевой контур
+docker compose --profile prod down app-prod db-prod redis-prod caddy
+# Откатить код: вернуться на предыдущий коммит и пересобрать образ
+git checkout <предыдущий-коммит>
+docker compose --profile prod up -d --build app-prod db-prod redis-prod caddy
 ```
+
+**Без `--build` откат не откатывает код:** compose поднимет уже собранный образ
+с текущим содержимым. Образы помечаются тегом коммита — при выкатке
+(`docker build`) стоит добавлять `--build` всегда.
 
 Откат кода не откатывает миграции: если миграция необратима, восстанавливают базу
 из бэкапа:
