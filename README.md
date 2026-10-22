@@ -37,10 +37,35 @@ docker compose logs app | grep DEEP_LINK  # токен для шага 3
 
 Открыть **http://localhost:3000/mock/** — это эмулятор чата.
 
-> На машине разработчика Docker Desktop нет, поэтому путь A написан по плану
-> §15 и здесь не прогонялся. Проверенный локальный путь — ниже.
+Путь A (Docker) — рекомендуется на Mac: Docker Desktop запускает те же
+`postgres:16-alpine` / `redis:7-alpine`, и команда одна. Путь B — если Docker
+не ставим.
 
 ### Путь B — локально (проверен)
+
+> macOS / Linux (bash):
+
+```bash
+npm install
+cp .env.example .env             # Postgres и Redis на localhost — значения уже стоят
+npm run db:migrate
+npm run db:reset                 # чистый стенд: сносит данные и накатывает миграции с сидом
+npm run db:seed                  # печатает DEEP_LINK=rt_<дисциплина>_<сессия>
+PORT=3100 npm run dev            # http://localhost:3100
+```
+
+Зависимости на macOS:
+
+```bash
+brew install postgresql@16 redis
+brew services start postgresql@16
+brew services start redis
+createdb iubip_retake
+createdb iubip_retake_test
+# пользователю iubip нужен доступ: psql -c "CREATE ROLE iubip LOGIN PASSWORD 'iubip'; GRANT ALL ON DATABASE iubip_retake TO iubip; GRANT ALL ON DATABASE iubip_retake_test TO iubip;"
+```
+
+> Windows (PowerShell):
 
 ```powershell
 npm install
@@ -51,7 +76,8 @@ npm run db:seed                # печатает DEEP_LINK=rt_<дисципли
 npm run dev                    # http://localhost:3000
 ```
 
-Порт берётся из `.env`; если 3000 занят — `$env:PORT=3100; npm run dev`.
+Порт берётся из `.env`; если 3000 занят — `PORT=3100 npm run dev` (PowerShell:
+`$env:PORT=3100; npm run dev`).
 
 Сид идемпотентен: его можно гонять сколько угодно раз — он возвращает стенд
 в исходное состояние (аудитория `А-204`, слот открыт, демо-запись `submitted`).
@@ -109,11 +135,11 @@ npx vitest run --coverage
 npm run lint
 ```
 
-Фактический результат (2026-10-22, Windows):
+Фактический результат (2026-10-22, Windows/WSL2; на macOS путь тот же):
 
 | Проверка | Вывод |
 |---|---|
-| `npm test` | **115 passed** (13 файлов), 0 failed |
+| `npm test` | **116 passed** (13 файлов), 0 failed |
 | `npm run test:e2e` | **1 passed** — полный цикл §11.3 |
 | `node scripts/demo12.mjs <DEEP_LINK>` | **19/19 OK** — сценарий §12 на живом сервере, по HTTP в mock-эндпоинты (тот же путь, что использует эмулятор); на грязном стенде — код 2 с подсказкой |
 | `npx vitest run --coverage` | Stmts **93.80%**, Branch **83.72%**, Funcs **97.36%**, Lines **93.80%** по `src/domain/**` (пороги 80/75/80/80 пройдены) |
