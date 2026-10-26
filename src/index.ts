@@ -2,7 +2,14 @@ import { config } from "./config.js";
 import { logger } from "./infra/logger.js";
 import { disconnectPrisma, getPrisma } from "./infra/db/prisma.js";
 import { createMaxClient } from "./infra/max/index.js";
-import { closeQueue, createNotifyQueue, QueueNotificationSink, getRedis } from "./infra/queue/queue.js";
+import { startPoller } from "./infra/max/poller.js";
+import {
+  closeQueue,
+  createNotifyQueue,
+  QueueNotificationSink,
+  QueueReminderScheduler,
+  getRedis,
+} from "./infra/queue/queue.js";
 import { closeWorker, createNotifyWorker } from "./infra/queue/worker.js";
 import { BookingService } from "./domain/booking/booking.service.js";
 import { SlotService } from "./domain/slot/slot.service.js";
@@ -22,11 +29,13 @@ async function main(): Promise<void> {
   const notifications = new QueueNotificationSink(queue, getRedis(config.REDIS_URL));
 
   const roles = new RoleService(prisma, config.DIRECTORATE_CHAT_ID);
+  const reminders = new QueueReminderScheduler(queue, config.REMINDERS_ENABLED, config.REMINDER_LEAD_HOURS);
   const bookings = new BookingService(
     prisma,
     notifications,
     config.CANCEL_DEADLINE_HOURS,
     config.DIRECTORATE_CHAT_ID,
+    reminders,
   );
   const slots = new SlotService(prisma, notifications);
   const registry = new RegistryService(prisma, notifications);
@@ -66,10 +75,30 @@ async function main(): Promise<void> {
 
   const app = await buildApp(appContext);
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
-  logger.info("Сервис запущен", { port: config.PORT, mockMax: config.MOCK_MAX });
+  logger.info("Сервис запущен", {
+    port: config.PORT,
+    mockMax: config.MOCK_MAX,
+    mode: config.MODE,
+    reminders: config.REMINDERS_ENABLED,
+  });
+
+  // Транспорт входящих: webhook (по умолчанию) ИЛИ long polling — не оба.
+  // При MODE=webhook startPoller вернёт null, цикла не будет вовсе.
+  const poller = startPoller({
+    mode: config.MODE,
+    apiBase: config.MAX_API_BASE,
+    token: config.MAX_BOT_TOKEN,
+    onEvent: async (event) => {
+      await dispatchBot(event, deps);
+    },
+  });
+  if (poller) {
+    logger.info("MAX: long polling запущен (MODE=polling, этап 1.5)", { apiBase: config.MAX_API_BASE });
+  }
 
   const shutdown = async () => {
     logger.info("Остановка…");
+    await poller?.stop();
     await app.close();
     await closeWorker(worker);
     await closeQueue(queue, redis).catch(() => undefined);

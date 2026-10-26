@@ -17,6 +17,7 @@ export type BookingErrorCode =
   | "slot_not_found"
   | "slot_cancelled"
   | "slot_conflict"
+  | "no_seats"
   | "registry_invalid";
 
 export class BookingError extends Error {

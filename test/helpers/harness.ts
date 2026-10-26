@@ -62,11 +62,29 @@ const baseHeaders = (token: string): Record<string, string> => ({
   "X-Service-Token": token,
 });
 
+/**
+ * WSL2 с Postgres засыпает, когда простоивает: Prisma отвечает P1001
+ * «Can't reach database server». Глобальный setup ждёт базу только в НАЧАЛЕ
+ * прогона, поэтому подключение харнеса ретраим сами — иначе середина прогона
+ * падает по причине окружения, а не кода (строчка P1001 ловилась и в CI-прогоне).
+ */
+async function connectWithRetry(prisma: PrismaClient, attempts = 5): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await prisma.$connect();
+      return;
+    } catch (error) {
+      if (attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 export async function createHarness(overrides?: Partial<AppConfig>): Promise<Harness> {
   const { config } = await import("../../src/config.js");
 
   const prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
-  await prisma.$connect();
+  await connectWithRetry(prisma);
 
   const effective = overrides ? { ...config, ...overrides } : config;
   const client = new RecordingClient(createMockClient(prisma));

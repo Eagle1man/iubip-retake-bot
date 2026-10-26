@@ -5,7 +5,7 @@ import { logger } from "../../infra/logger.js";
 import { listNotifications } from "../../infra/notifications.js";
 import { emulatorHtml } from "../../mock-ui/emulator.js";
 import type { AppContext } from "../context.js";
-import type { IncomingEvent } from "../../bot/dispatcher.js";
+import { IncomingEventSchema, type IncomingEvent } from "../../bot/dispatcher.js";
 
 const InjectBody = z.object({
   userId: z.string().min(1),
@@ -38,13 +38,28 @@ export function verifyWebhook(request: FastifyRequest, secret: string | undefine
 export async function maxRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   // ── Боевой вебхук ────────────────────────────────────────
   app.post("/internal/webhook/max", async (request, reply) => {
+    // Взаимоисключение транспортов (расширенное ТЗ §7): при MODE=polling
+    // вебхук не обслуживается вовсе — подписка должна быть настроена под поллер.
+    if (ctx.config.MODE === "polling") {
+      return reply.code(404).send({ error: "Webhook выключен: MODE=polling" });
+    }
+
     if (!verifyWebhook(request, ctx.config.MAX_WEBHOOK_SECRET)) {
       return reply.code(401).send({ error: "Неверная подпись" });
     }
 
+    // Тело проходит через общую схему диспетчера: кривое событие — 400 на входе.
+    const parsed = IncomingEventSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: "Невалидное событие вебхука",
+        details: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+      });
+    }
+
     // Отвечаем 200 сразу: обработка идёт в фоне, иначе MAX пришлёт событие повторно.
     void ctx
-      .dispatch(request.body as IncomingEvent)
+      .dispatch(parsed.data)
       .catch((error) => logger.error("Вебхук MAX не обработан", { error: String(error) }));
 
     return reply.code(200).send({ ok: true });

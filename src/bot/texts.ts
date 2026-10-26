@@ -39,6 +39,9 @@ export const texts = {
     registrationClosed: "Регистрация на эту сессию закрыта. Выберите другую сессию.",
     admitted: "Вы допущены к пересдаче. Оплата не блокирует участие.",
     noSlots: "Открытых сессий по этой дисциплине нет.",
+    // Места (расширенное ТЗ §5.4, строка 5).
+    noSeats: "Мест нет: все места на эту сессию заняты. Выберите другую сессию.",
+    slotFull: "Мест нет",
   },
   teacher: {
     greeting: (fio: string) => `Здравствуйте, ${fio}! Вы вошли как преподаватель.`,
@@ -120,4 +123,6 @@ export const STUDENT_TEXT_KEYS = [
   "registrationClosed",
   "admitted",
   "noSlots",
+  "noSeats",
+  "slotFull",
 ] as const;

@@ -28,6 +28,13 @@ const EnvSchema = z.object({
   MAX_API_BASE: z.string().url().default("https://platform-api2.max.ru"),
   MAX_WEBHOOK_SECRET: z.string().optional(),
   MAX_BOT_NAME: z.string().optional(),
+  /**
+   * Транспорт входящих событий (расширенное ТЗ §3):
+   * webhook (production, этап 2) или long polling (этап 1.5, только разработка).
+   * Взаимоисключение: при MODE=webhook поллер не запускается, при MODE=polling
+   * вебхук-эндпоинт отвечает 404.
+   */
+  MODE: z.enum(["webhook", "polling"]).default("webhook"),
 
   PAYMENT_API_BASE: z.string().url().default("http://localhost:3200"),
   PAYMENT_API_TOKEN: z.string().default("dev-secret"),
@@ -45,6 +52,8 @@ const EnvSchema = z.object({
   DIRECTORATE_CHAT_ID: z.string().default("dev-directorate"),
 
   REMINDERS_ENABLED: boolFromEnv.default(false),
+  /** Напоминание уходит за REMINDER_LEAD_HOURS до начала сессии (ТЗ: 24 ч). */
+  REMINDER_LEAD_HOURS: z.coerce.number().int().positive().default(24),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -71,6 +80,14 @@ if (!data.MOCK_MAX && !data.MAX_BOT_TOKEN) {
  */
 if (!data.MOCK_MAX && !data.MAX_WEBHOOK_SECRET) {
   throw new Error("MAX_WEBHOOK_SECRET обязателен, когда MOCK_MAX=false");
+}
+
+/**
+ * Long polling опрашивает MAX по сети — без токена цикл не имеет смысла,
+ * а ошибка на этапе 1.5 должна быть понятной, а не «401 в цикле».
+ */
+if (data.MODE === "polling" && !data.MAX_BOT_TOKEN) {
+  throw new Error("MAX_BOT_TOKEN обязателен, когда MODE=polling");
 }
 
 export const config = Object.freeze(data);

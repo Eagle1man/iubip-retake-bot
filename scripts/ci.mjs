@@ -12,7 +12,7 @@
  * Первый упавший шаг останавливает прогон.
  */
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const flags = new Set(process.argv.slice(2));
 const skipDocker = flags.has("--skip-docker");
@@ -93,6 +93,38 @@ function checkComposeAndEnv() {
   console.log(`--- OK: все описаны (${required.join(", ")})`);
 }
 
+/**
+ * Чек-лист матрицы §5.4 (расширенное ТЗ): каждая строка 1..8 должна быть
+ * закрыта тестом с маркером «матрица №N». Без этой проверки строка матрицы
+ * может остаться без теста — и никто этого не заметит: CI зелёный, матрица
+ * не выполнена. Строку ищем по названию теста, а не по файлу: перенос теста
+ * в другой файл чек-лист не ломает.
+ */
+function checkMatrixCoverage() {
+  const files = readdirSync("test", { recursive: true }).filter(
+    (file) => typeof file === "string" && file.endsWith(".ts"),
+  );
+  const found = new Set();
+  for (const file of files) {
+    const content = readFileSync(`test/${file}`, "utf8");
+    for (const match of content.matchAll(/матрица №(\d)/g)) {
+      found.add(Number(match[1]));
+    }
+  }
+
+  const all = [1, 2, 3, 4, 5, 6, 7, 8];
+  const missing = all.filter((n) => !found.has(n));
+  console.log(`\n=== матрица §5.4: закрыто строк ${all.length - missing.length} из ${all.length}`);
+  if (missing.length > 0) {
+    console.error(
+      `--- ПРОВАЛ: нет тестов со строками матрицы: ${missing.map((n) => `№${n}`).join(", ")} — ` +
+        "строка расширенного ТЗ осталась без проверки (таблица — README, раздел «Матрица §5.4»)",
+    );
+    process.exit(1);
+  }
+  console.log("--- OK: строки 1–8 закрыты тестами с маркером «матрица №N»");
+}
+
 function dockerStatus() {
   const result = spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
     stdio: "pipe",
@@ -117,6 +149,7 @@ function composePluginStatus() {
 console.log(`CI-прогон iubip-retake-bot, Node ${process.version}, платформа ${process.platform}`);
 
 checkComposeAndEnv();
+checkMatrixCoverage();
 
 localStep("lint", "eslint/bin/eslint.js", ["."]);
 localStep("типы", "typescript/bin/tsc", ["--noEmit", "-p", "tsconfig.eslint.json"]);

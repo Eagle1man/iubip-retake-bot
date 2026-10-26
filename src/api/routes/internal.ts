@@ -14,6 +14,7 @@ export const httpStatusFor = (code: string): number => {
     case "cancel_forbidden":
     case "slot_cancelled":
     case "slot_conflict":
+    case "no_seats":
       return 409;
     case "booking_not_found":
     case "slot_not_found":
@@ -37,6 +38,18 @@ const CreateBookingBody = z.object({
 const PaymentBody = z.object({ paid: z.boolean() });
 const AttendanceBody = z.object({ attendance: z.enum(["attended", "no_show"]) });
 const RoomBody = z.object({ room: z.string().min(1) });
+
+/** Создание слота менеджером (расширенное ТЗ §2): лимит мест — maxSeats (0 без лимита). */
+const CreateSlotBody = z.object({
+  disciplineId: z.string().min(1),
+  teacherId: z.string().min(1),
+  startsAt: z.coerce.date(),
+  room: z.string().min(1),
+  expectedCapacity: z.number().int().positive().default(30),
+  alertThreshold: z.number().int().positive().default(30),
+  registrationDeadline: z.coerce.date(),
+  maxSeats: z.number().int().min(0).default(0),
+});
 
 /** Роль для действий, которые выполняет человек. X-User-Id обязателен для оплаты и явки. */
 async function requireRole(
@@ -153,6 +166,14 @@ async function internalEndpoints(app: FastifyInstance, ctx: AppContext): Promise
   app.get("/internal/slots", async (request) => {
     const { disciplineId } = request.query as { disciplineId?: string };
     return ctx.slots.listOpen(disciplineId);
+  });
+
+  // Создание слота (менеджер, расширенное ТЗ §2). Успех — 201, конфликт
+  // времени преподавателя — 409 (slot_conflict).
+  app.post("/internal/slots", async (request, reply) => {
+    const body = CreateSlotBody.parse(request.body);
+    const created = await ctx.slots.create(body);
+    return reply.code(201).send(created);
   });
 
   app.post("/internal/slots/:id/room", async (request) => {

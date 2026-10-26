@@ -36,6 +36,9 @@ model ExamSlot {
   startsAt             DateTime
   room                 String
   expectedCapacity     Int        @default(30)
+  // Жёсткий лимит мест (расширенное ТЗ §4): 0 — лимит не задан.
+  // expectedCapacity остался справочным (§13.13) и не блокирует запись.
+  maxSeats             Int        @default(0)
   alertThreshold       Int        @default(30)
   registrationDeadline DateTime
   status               String     @default("open")

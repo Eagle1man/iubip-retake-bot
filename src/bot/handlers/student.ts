@@ -48,7 +48,11 @@ export async function listOpenSlots(ctx: BotContext, disciplineId?: string): Pro
     texts.student.chooseSlot(discipline.name),
     keyboard([
       ...open.map((s) => [
-        btn(texts.student.slotLine({ room: s.room, startsAt: fmt(s.startsAt), amount: 500 }), `s:${s.slotId}`),
+        btn(
+          (s.maxSeats > 0 && s.bookedCount >= s.maxSeats ? `${texts.student.slotFull} · ` : "") +
+            texts.student.slotLine({ room: s.room, startsAt: fmt(s.startsAt), amount: 500 }),
+          `s:${s.slotId}`,
+        ),
       ]),
     ]),
   );
@@ -114,10 +118,19 @@ export async function handleConfirm(ctx: BotContext): Promise<void> {
     if (error instanceof BookingError) {
       if (error.code === "registration_closed") await ctx.send(texts.student.registrationClosed);
       else if (error.code === "duplicate_active") await ctx.send(texts.student.duplicate);
+      else if (error.code === "no_seats") await ctx.send(texts.student.noSeats);
       else await ctx.send(texts.system.error);
       return;
     }
     throw error;
+  }
+
+  // Детерминированный paymentToken повторяет ту же запись: дубля нет,
+  // но и «Вы записаны!» второй раз врать не должна — говорим как есть
+  // (матрица §5.4, строка 3).
+  if (result.deduplicated) {
+    await ctx.send(texts.student.duplicate);
+    return;
   }
 
   const booking = await ctx.deps.prisma.booking.findUnique({ where: { id: result.bookingId } });

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import { BookingService, type NotificationSink } from "../domain/booking/booking.service.js";
 import { RegistryService } from "../domain/registry/registry.service.js";
@@ -25,6 +26,26 @@ export interface IncomingEvent {
   callbackData?: string | undefined;
   file?: { fileId?: string | undefined; url?: string | undefined; name?: string | undefined } | undefined;
 }
+
+/**
+ * Схема входящего события (расширенное ТЗ §5.3): и боевой вебхук, и long
+ * polling проверяют тело ОДНОЙ схемой — кривое событие отваливается на входе,
+ * а не падает в диспетчере посреди обработки.
+ */
+export const IncomingEventSchema = z.object({
+  userId: z.string().min(1, "userId обязателен"),
+  text: z.string().optional(),
+  callbackData: z.string().optional(),
+  file: z
+    .object({
+      fileId: z.string().optional(),
+      url: z.string().optional(),
+      name: z.string().optional(),
+    })
+    .optional(),
+});
+
+export type IncomingEventParsed = z.infer<typeof IncomingEventSchema>;
 
 export interface BotContext {
   event: IncomingEvent;

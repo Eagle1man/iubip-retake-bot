@@ -10,6 +10,8 @@ export interface CreateSlotInput {
   expectedCapacity: number;
   alertThreshold: number;
   registrationDeadline: Date;
+  /** Жёсткий лимит мест: 0 (или не задано) — без ограничения. */
+  maxSeats?: number;
 }
 
 const HOUR_MS = 3_600_000;
@@ -51,6 +53,7 @@ export class SlotService {
       room: slot.room,
       registrationDeadline: slot.registrationDeadline.toISOString(),
       expectedCapacity: slot.expectedCapacity,
+      maxSeats: slot.maxSeats,
       bookedCount: countBySlot.get(slot.id) ?? 0,
     }));
   }
@@ -59,13 +62,18 @@ export class SlotService {
     if (input.registrationDeadline.getTime() > input.startsAt.getTime()) {
       throw new BookingError("slot_conflict", "Дедлайн регистрации не может быть позже начала сессии");
     }
+    if (input.maxSeats !== undefined && (!Number.isInteger(input.maxSeats) || input.maxSeats < 0)) {
+      throw new BookingError("slot_conflict", "maxSeats — целое неотрицательное число (0 — без лимита)");
+    }
     const clash = await this.prisma.examSlot.findFirst({
       where: { teacherId: input.teacherId, startsAt: input.startsAt, status: { not: "cancelled" } },
     });
     if (clash) throw new BookingError("slot_conflict", "У этого преподавателя уже есть сессия в это время");
 
-    const created = await this.prisma.examSlot.create({ data: input });
-    return { slotId: created.id, status: created.status };
+    const created = await this.prisma.examSlot.create({
+      data: { ...input, maxSeats: input.maxSeats ?? 0 },
+    });
+    return { slotId: created.id, status: created.status, maxSeats: created.maxSeats };
   }
 
   /** Смена аудитории + уведомление всем записанным. */

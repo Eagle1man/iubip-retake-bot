@@ -1,8 +1,11 @@
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
-import type { Notification } from "../../domain/booking/booking.service.js";
+import type { Notification, ReminderScheduler } from "../../domain/booking/booking.service.js";
+import { REMINDER_LEAD_HOURS, reminderDelayMs } from "../../domain/reminder/reminder.rules.js";
 
 export const NOTIFY_QUEUE = "notify";
+/** Имя джобы напоминания о сессии (расширенное ТЗ §5.4, строка 8). */
+export const REMIND_JOB = "remind";
 
 /** Throttling уведомлений (§2 ТЗ): не больше 30 сообщений в минуту. */
 export const NOTIFY_LIMITER = { max: 30, duration: 60_000 };
@@ -72,4 +75,42 @@ export async function closeQueue(queue: Queue, redis: Redis): Promise<void> {
   await queue.close();
   await redis.quit();
   connection = undefined;
+}
+
+/**
+ * Планировщик напоминаний на BullMQ: delayed-джоба с jobId по слоту.
+ *
+ * Дедуплицирует повторы сам BullMQ: jobId `remind-<slotId>` второй раз не
+ * добавится, пока первая джоба живёт в очереди (выполненная — в completed).
+ * Записи после триггера (осталось меньше 24 ч) планируются с задержкой 0 —
+ * напоминание уходит сразу, сессия ещё впереди.
+ */
+export class QueueReminderScheduler implements ReminderScheduler {
+  constructor(
+    private readonly queue: Queue,
+    private readonly enabled: boolean,
+    private readonly leadHours: number = REMINDER_LEAD_HOURS,
+  ) {}
+
+  async schedule(slot: { id: string; startsAt: Date }): Promise<void> {
+    if (!this.enabled) return;
+
+    const delay = reminderDelayMs(slot.startsAt, new Date(), this.leadHours);
+    if (delay === null) return; // сессия уже началась — напоминать не о чем
+
+    const jobId = `remind-${slot.id}`.replace(/[^A-Za-z0-9_-]/g, "-");
+    await this.queue.add(
+      REMIND_JOB,
+      { slotId: slot.id },
+      {
+        jobId,
+        delay,
+        // Напоминание не должно умирать молча при сетевом сбое.
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 200,
+      },
+    );
+  }
 }

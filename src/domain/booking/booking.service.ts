@@ -28,6 +28,18 @@ export interface CreateBookingResult {
   deduplicated: boolean;
 }
 
+/** Планировщик напоминаний: домен лишь просит запланировать (реализация — очередь). */
+export interface ReminderScheduler {
+  schedule(slot: { id: string; startsAt: Date }): Promise<void>;
+}
+
+/** Заглушка, когда напоминания выключены или планировщик не передан. */
+export const noopReminderScheduler: ReminderScheduler = {
+  async schedule() {
+    /* не планируем — нечего и напоминать */
+  },
+};
+
 const HOUR_MS = 3_600_000;
 
 export class BookingService {
@@ -36,6 +48,7 @@ export class BookingService {
     private readonly notifications: NotificationSink,
     private readonly cancelDeadlineHours: number,
     private readonly directorateChatId: string,
+    private readonly reminders: ReminderScheduler = noopReminderScheduler,
   ) {}
 
   /**
@@ -73,6 +86,19 @@ export class BookingService {
       throw new BookingError("duplicate_active", "Уже есть активная запись на эту дисциплину");
     }
 
+    // Места (расширенное ТЗ §5.4, строка 5): maxSeats=0 — лимит не задан.
+    // Проверка по счётчику, а не по unique-индексу: вместимость — это условие
+    // на количество строк, гонку двух одновременных записей здесь не ловим
+    // (запись идёт один студент за раз, порог очереди — вторая линия защиты).
+    if (slot.maxSeats > 0) {
+      const taken = await this.prisma.booking.count({
+        where: { slotId: slot.id, status: { in: ["submitted", "paid"] } },
+      });
+      if (taken >= slot.maxSeats) {
+        throw new BookingError("no_seats", "Мест нет: все места на эту сессию заняты");
+      }
+    }
+
     let bookingId: string;
     try {
       const created = await this.prisma.booking.create({
@@ -97,6 +123,9 @@ export class BookingService {
     }
 
     await this.maybeAlertOverflow(slot.id, slot.alertThreshold);
+    // Напоминание за 24 часа планируется на каждую запись: jobId по слоту
+    // в очереди дедуплицирует повторы (BullMQ не добавляет дубль).
+    await this.reminders.schedule({ id: slot.id, startsAt: slot.startsAt });
 
     return { bookingId, status: "submitted", deduplicated: false };
   }
@@ -174,7 +203,7 @@ export class BookingService {
     return { bookingId, status };
   }
 
-  /** Явка: attended / no_show. */
+  /** Явка: attended / no_show. Повтор той же отметки идемпотентен, без дубля уведомления. */
   async setAttendance(
     bookingId: string,
     attendance: "attended" | "no_show",
@@ -182,7 +211,24 @@ export class BookingService {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) throw new BookingError("booking_not_found", "Запись не найдена");
 
+    if (booking.attendance === attendance) {
+      return { bookingId, attendance };
+    }
     await this.prisma.booking.update({ where: { id: bookingId }, data: { attendance } });
+
+    // Матрица §5.4, строка 6: статус уходит менеджеру (дирекции).
+    try {
+      await this.notifications.notify({
+        userId: this.directorateChatId,
+        kind: "attendance_marked",
+        bookingId,
+        slotId: booking.slotId,
+        text: `Явка: ${booking.studentFio} — ${attendance === "attended" ? "пришёл" : "не пришёл"}.`,
+      });
+    } catch {
+      // Уведомление не должно ломать отметку явки.
+    }
+
     return { bookingId, attendance };
   }
 
